@@ -1,0 +1,388 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>连连看 - 测试页面</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: Arial, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+        }
+        
+        #app {
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            padding: 30px;
+            max-width: 900px;
+            width: 100%;
+        }
+        
+        .header {
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        
+        .header h1 {
+            font-size: 3em;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+        
+        .game-info {
+            display: flex;
+            justify-content: space-around;
+            margin-bottom: 20px;
+            flex-wrap: wrap;
+            gap: 15px;
+        }
+        
+        .info-item {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            padding: 15px 25px;
+            border-radius: 10px;
+            color: white;
+            min-width: 120px;
+            text-align: center;
+        }
+        
+        .info-item .label {
+            display: block;
+            font-size: 0.9em;
+            margin-bottom: 5px;
+            opacity: 0.9;
+        }
+        
+        .info-item .value {
+            display: block;
+            font-size: 1.8em;
+            font-weight: bold;
+        }
+        
+        .game-board {
+            background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
+            border-radius: 15px;
+            padding: 20px;
+            margin: 0 auto 20px;
+            box-shadow: inset 0 4px 10px rgba(0, 0, 0, 0.1);
+            position: relative;
+            overflow: hidden;
+        }
+        
+        .game-board canvas {
+            display: block;
+            margin: 0 auto;
+            cursor: pointer;
+            border: 3px solid #667eea;
+            border-radius: 10px;
+            background: white;
+        }
+        
+        .game-controls {
+            display: flex;
+            gap: 15px;
+            justify-content: center;
+            flex-wrap: wrap;
+            margin-top: 20px;
+        }
+        
+        .btn {
+            padding: 12px 30px;
+            border: none;
+            border-radius: 25px;
+            font-size: 1em;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
+        }
+        
+        .btn-primary {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+        
+        .btn-secondary {
+            background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+            color: white;
+        }
+    </style>
+</head>
+<body>
+    <div id="app">
+        <div class="header">
+            <h1>连连看</h1>
+        </div>
+        
+        <div class="game-info">
+            <div class="info-item">
+                <span class="label">分数</span>
+                <span class="value">{{ score }}</span>
+            </div>
+            <div class="info-item">
+                <span class="label">时间</span>
+                <span class="value">{{ time }}</span>
+            </div>
+            <div class="info-item">
+                <span class="label">关卡</span>
+                <span class="value">{{ level }}</span>
+            </div>
+            <div class="info-item">
+                <span class="label">剩余</span>
+                <span class="value">{{ remaining }}</span>
+            </div>
+        </div>
+        
+        <div class="game-board">
+            <canvas ref="canvas" width="600" height="400"></canvas>
+        </div>
+        
+        <div class="game-controls">
+            <button class="btn btn-primary" @click="restart">重新开始</button>
+            <button class="btn btn-secondary" @click="pause">{{ isPaused ? '继续' : '暂停' }}</button>
+            <button class="btn btn-secondary" @click="showLevelModal = true">关卡选择</button>
+        </div>
+        
+        <div v-if="showLevelModal" class="modal-overlay" @click.self="showLevelModal = false">
+            <div class="modal-content">
+                <h2>选择关卡</h2>
+                <div class="level-grid">
+                    <button v-for="i in 5" :key="i" class="level-btn" @click="selectLevel(i)">{{ i }}</button>
+                </div>
+                <button class="btn btn-secondary" @click="showLevelModal = false">关闭</button>
+            </div>
+        </div>
+    </div>
+    
+    <script src="https://cdn.jsdelivr.net/npm/vue@3.4.21/dist/vue.global.js"></script>
+    <script>
+        const { createApp, ref, computed, onMounted, onUnmounted } = Vue;
+        
+        const BLOCK_TYPES = ['🍎', '🍌', '🍇', '🍊', '🍓', '🍒', '🍍', '🥝', '🥑', '🍆', '🥕', '🌽', '🥦', '🍄'];
+        
+        function createAppLogic() {
+            const score = ref(0);
+            const level = ref(1);
+            const time = ref(60);
+            const remaining = ref(0);
+            const isPlaying = ref(false);
+            const isPaused = ref(false);
+            const showLevelModal = ref(false);
+            const canvas = ref(null);
+            const board = ref([]);
+            const selectedBlocks = ref([]);
+            const timer = ref(null);
+            
+            const blockSize = 40;
+            const blockGap = 5;
+            
+            function createBoard(lvl) {
+                const rows = lvl * 2 + 6;
+                const cols = lvl * 2 + 6;
+                const types = Math.min(lvl * 2 + 4, BLOCK_TYPES.length);
+                const totalBlocks = rows * cols;
+                
+                let blocks = [];
+                for (let i = 0; i < totalBlocks / 2; i++) {
+                    const type = Math.floor(Math.random() * types);
+                    blocks.push(type, type);
+                }
+                
+                blocks = blocks.sort(() => Math.random() - 0.5);
+                
+                const newBoard = [];
+                let idx = 0;
+                for (let row = 0; row < rows; row++) {
+                    const newRow = [];
+                    for (let col = 0; col < cols; col++) {
+                        newRow.push({
+                            type: blocks[idx],
+                            x: col,
+                            y: row,
+                            selected: false,
+                            removed: false,
+                            animating: false,
+                            scale: 1
+                        });
+                        idx++;
+                    }
+                    newBoard.push(newRow);
+                }
+                
+                return newBoard;
+            }
+            
+            function draw() {
+                if (!canvas.value) return;
+                const ctx = canvas.value.getContext('2d');
+                ctx.clearRect(0, 0, canvas.value.width, canvas.value.height);
+                
+                const boardX = (canvas.value.width - (board.value[0]?.length || 0) * (blockSize + blockGap)) / 2;
+                const boardY = (canvas.value.height - board.value.length * (blockSize + blockGap)) / 2;
+                
+                for (let row = 0; row < board.value.length; row++) {
+                    for (let col = 0; col < board.value[row].length; col++) {
+                        const block = board.value[row][col];
+                        if (!block.removed) {
+                            const x = boardX + col * (blockSize + blockGap);
+                            const y = boardY + row * (blockSize + blockGap);
+                            
+                            ctx.fillStyle = block.selected ? '#667eea' : '#f0f0f0';
+                            ctx.strokeStyle = block.selected ? '#764ba2' : '#ddd';
+                            ctx.lineWidth = 2;
+                            
+                            ctx.beginPath();
+                            ctx.roundRect(x, y, blockSize, blockSize, 8);
+                            ctx.fill();
+                            ctx.stroke();
+                            
+                            ctx.fillStyle = '#333';
+                            ctx.font = '24px Arial';
+                            ctx.textAlign = 'center';
+                            ctx.textBaseline = 'middle';
+                            ctx.fillText(BLOCK_TYPES[block.type], x + blockSize / 2, y + blockSize / 2);
+                        }
+                    }
+                }
+            }
+            
+            function handleCanvasClick(e) {
+                if (!isPlaying.value || isPaused.value) return;
+                
+                const rect = canvas.value.getBoundingClientRect();
+                const x = e.clientX - rect.left;
+                const y = e.clientY - rect.top;
+                
+                const boardX = (canvas.value.width - (board.value[0]?.length || 0) * (blockSize + blockGap)) / 2;
+                const boardY = (canvas.value.height - board.value.length * (blockSize + blockGap)) / 2;
+                
+                const col = Math.floor((x - boardX) / (blockSize + blockGap));
+                const row = Math.floor((y - boardY) / (blockSize + blockGap));
+                
+                if (row >= 0 && row < board.value.length && col >= 0 && col < board.value[0].length) {
+                    const block = board.value[row][col];
+                    if (!block.removed) {
+                        if (selectedBlocks.value.length === 0) {
+                            block.selected = true;
+                            selectedBlocks.value.push(block);
+                        } else if (selectedBlocks.value.length === 1) {
+                            const firstBlock = selectedBlocks.value[0];
+                            if (firstBlock === block) {
+                                block.selected = false;
+                                selectedBlocks.value = [];
+                            } else if (firstBlock.type === block.type) {
+                                firstBlock.selected = false;
+                                block.selected = false;
+                                firstBlock.removed = true;
+                                block.removed = true;
+                                selectedBlocks.value = [];
+                                score.value += 10;
+                                updateRemaining();
+                            }
+                        }
+                        draw();
+                    }
+                }
+            }
+            
+            function updateRemaining() {
+                let count = 0;
+                for (let row = 0; row < board.value.length; row++) {
+                    for (let col = 0; col < board.value[row].length; col++) {
+                        if (!board.value[row][col].removed) {
+                            count++;
+                        }
+                    }
+                }
+                remaining.value = count;
+            }
+            
+            function startGame(lvl = 1) {
+                level.value = lvl;
+                score.value = 0;
+                time.value = 60;
+                board.value = createBoard(lvl);
+                selectedBlocks.value = [];
+                isPlaying.value = true;
+                isPaused.value = false;
+                updateRemaining();
+                
+                if (timer.value) clearInterval(timer.value);
+                timer.value = setInterval(() => {
+                    if (!isPaused.value && isPlaying.value) {
+                        time.value--;
+                        if (time.value <= 0) {
+                            isPlaying.value = false;
+                            clearInterval(timer.value);
+                            alert('游戏结束！分数：' + score.value);
+                        }
+                    }
+                }, 1000);
+                
+                setTimeout(draw, 100);
+            }
+            
+            function restart() {
+                startGame(level.value);
+            }
+            
+            function pause() {
+                isPaused.value = !isPaused.value;
+            }
+            
+            function selectLevel(lvl) {
+                showLevelModal.value = false;
+                startGame(lvl);
+            }
+            
+            onMounted(() => {
+                startGame(1);
+                canvas.value?.addEventListener('click', handleCanvasClick);
+            });
+            
+            onUnmounted(() => {
+                if (timer.value) clearInterval(timer.value);
+            });
+            
+            return {
+                score,
+                level,
+                time: computed(() => {
+                    const m = Math.floor(time.value / 60);
+                    const s = time.value % 60;
+                    return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+                }),
+                remaining,
+                isPaused,
+                showLevelModal,
+                canvas,
+                selectLevel,
+                restart,
+                pause
+            };
+        }
+        
+        const app = createApp({
+            setup() {
+                return createAppLogic();
+            }
+        });
+        
+        app.mount('#app');
+    </script>
+</body>
+</html>
